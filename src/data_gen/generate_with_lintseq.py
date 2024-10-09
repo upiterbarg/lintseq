@@ -122,7 +122,7 @@ def main(args):
     args.dest = os.path.join(
         args.dest_dir,
         f"{len([f for f in os.listdir(args.dest_dir)])}".zfill(4)
-        + f"_n{args.num_samples}_s{args.num_edit_paths_per_sample}_rs{args.seed}.jsonl",
+        + f"_n{args.num_samples}_s{args.num_edit_paths_per_sample}_rs{args.seed}_lintseq.jsonl",
     )
     print(args.dest)
 
