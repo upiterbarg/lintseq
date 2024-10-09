@@ -1,28 +1,15 @@
-import concurrent
 import functools
-import gc
-import json
-import logging
-import multiprocessing
+import jsonlines
+import pathlib
+import sys
 import numpy as np
 import os
-import time
 import pandas as pd
-import pathlib
-import pdb
-import sys
-import _thread
-import warnings
-from typing import Optional
-from queue import Queue
-from threading import Thread
-from argparse import ArgumentParser
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
-from fastparquet import ParquetFile
-from functools import partial
-from pylint import run_pylint
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
+from argparse import ArgumentParser
+from copy import deepcopy
+import time
 
 ####
 REPO_NAME = "lintseq"
@@ -31,195 +18,187 @@ PROJECT_PATH = base_path[: base_path.rfind(REPO_NAME) + len(REPO_NAME)]
 ####
 sys.path.insert(0, os.path.join(PROJECT_PATH, "src"))
 from utils import *
+
 sys.path.insert(0, os.path.join(PROJECT_PATH, "src", "data_gen"))
 from lintseq import *
 
-warnings.filterwarnings("ignore")
 
-"""Multithreaded synthetic edit sequence generation with LintSeq."""
+def gen_edit_paths(idx, start_i, total_samples, args, df, samples):
+    """
+    Batch generation of edit paths.
+    Each process will generate edit paths for a chunk of the data to minimize task switching.
+    """
+    data = []
+    for i in range(start_i, start_i + total_samples):
+        index = samples[i]
+        code_as_text = df[args.data_key][index]
+        code_as_text = strip_chain_of_thought(code_as_text)
 
-class Pool:
-    """Pool with maximal concurrent job load, managed via 'work' and 'out' queues."""
-    def __init__(self, total_work, work, max_concurrent_jobs, max_worker: int = 32) -> None:
-        self.max_workers = max_worker
-        self.work_queue = Queue(max_concurrent_jobs)
-        self.out_queue = Queue()
-        self.is_running = True
-        pbar = tqdm(total=total_work)
+        for _ in range(args.num_edit_paths_per_sample):
+            try:
+                edit_path = lintseq_backward_sampling_pythonic(
+                    code_as_text,
+                    children_per_round=1,
+                    top_k=1,
+                    max_population_size=1,
+                    max_depth=512,
+                    indent_bias_sampling_factor=1,
+                    ignore_imports=False,
+                    ignore_comments=True,
+                    ignore_global_defs=True,
+                    verbose=False,
+                    ignore_init_errors=False,
+                )
+            except:
+                continue  # Skip errors, don't stop the whole process
 
-        def _work():
-            while self.is_running:
-                item = self.work_queue.get()
-                result = work(*item)
-                self.work_queue.task_done()
-                pbar.update(1)
-                self.out_queue.put(result)
+            if edit_path is None:
+                continue
 
-        for _ in range(self.max_workers):
-            Thread(target=_work).start()
+            edit_sequence = edit_path[0][0]
 
-    def close(self):
-        self.is_running = False
+            _, diff_seq = inflate_edit_path(code_as_text, edit_sequence)
 
-
-def worker_fn(code_as_text, datum):
-    """Worker function. Some linters (such as pylint) may have extremely high RAM usage or even
-    memory leaks. Instatiating separate workers for each linting operatation limits RAM pressure."""
-    try:
-        edit_path = lintseq_backward_sampling_pythonic(
-            code_as_text,
-            children_per_round=1,
-            top_k=1,
-            max_population_size=1,
-            max_depth=512,
-            indent_bias_sampling_factor=1,
-            ignore_imports=False,
-            ignore_comments=True,
-            ignore_global_defs=True,
-            verbose=False,
-            ignore_init_errors=False,
-        )
-    except:
-        return None
-
-    if edit_path is None:
-        return None
-
-    edit_sequence =  edit_path[0][0]
-
-    _, diff_seq = inflate_edit_path(code_as_text, edit_sequence)
-
-    datum = {
-        **datum,
-        **{
-            "edit_path": diff_seq,
-        }
-    }
-    return datum
+            datum = {
+                "edit_path": diff_seq,
+                "index": int(index),
+                "source_file": args.source,
+                "source_instruction": df["instruction"][index],
+                "source_response": df[args.data_key][index],
+            }
+            data.append(datum)
+    return data
 
 
 def main(args):
     set_seed_everywhere(args.seed)
 
-    if args.source[args.source.rfind(".") :] == ".jsonl":
-        df = pd.read_json(args.source, lines=True)
-    else:
-        raise ValueError(f"Unsupported file format {args.source[args.source.rfind(".") :]}")
-
+    df = pd.read_json(args.source, lines=True)
     try:
         args.num_samples = int(args.num_samples)
         samples = np.random.choice(
             np.arange(len(df)), size=(args.num_samples,), replace=False
         )
     except:
-        samples = np.array([i for i in range(len(df))])
-        args.num_samples = len(samples)
+        samples = np.arange(len(df))
 
     samples = np.array(samples)
 
-    args.dest_dir = os.path.join(PROJECT_PATH, args.dest_dir)
-    os.makedirs(args.dest_dir, exist_ok=True)
-    args.dest = os.path.join(
-        args.dest_dir,
-        f"{len([f for f in os.listdir(args.dest_dir)])}".zfill(4)
-        + f"_n{args.num_samples}_s{args.num_edit_paths_per_sample}_rs{args.seed}_lintseq.jsonl",
-    )
-    print(args.dest)
+    # Batch work to reduce inter-process communication
+    # num_paths_per_proc = min(8, samples.shape[0] // num_proc)
+    num_paths_per_proc = 8
+    num_proc = 128
 
-    ### MULTI-THREAD
-    total_work = len(samples) * args.num_edit_paths_per_sample
-    pool = Pool(
-        total_work, 
-        work=worker_fn, 
-        max_concurrent_jobs=total_work, 
-        max_worker=args.num_workers
+    gen_edit_paths_helper = functools.partial(
+        gen_edit_paths, args=args, df=df, samples=samples
     )
 
-    def worker():
-        counter = 0
-        with open(args.dest, "w") as outfile:
-            while True:
-                item = pool.out_queue.get()
-                counter += 1
-                if not item is None:
-                    pitem = json.dumps(item) + "\n"
-                    outfile.write(pitem)
-                pool.out_queue.task_done()
-                if counter == total_work:
-                    pool.close()
-                    os._exit(0)
-                    return
+    gen_args = []
+    start_i = 0
+    for i in range(0, samples.shape[0], num_paths_per_proc):
+        gen_args.append(
+            [i // num_paths_per_proc, i, min(num_paths_per_proc, samples.shape[0] - i)]
+        )
 
-    post_process_thread = Thread(target=worker)
-    post_process_thread.start()
+    total_tasks = samples.shape[0] * args.num_edit_paths_per_sample
 
-    for index in samples:
-        code_as_text = df[args.data_key][index]
-        code_as_text = strip_chain_of_thought(code_as_text)
+    # Single progress bar for the entire processing
+    with tqdm(total=total_tasks, desc="Processing", ncols=100) as pbar:
+        # Write the output file in larger batches
+        with jsonlines.open(args.dest, mode="w") as writer:
+            with ProcessPoolExecutor(max_workers=num_proc) as executor:
+                futures = [
+                    executor.submit(gen_edit_paths_helper, *args) for args in gen_args
+                ]
 
-        for j in range(args.num_edit_paths_per_sample):
-            datum = {
-                "index": int(index),
-                "source_file": args.source,
-                "source_instruction": df["instruction"][index],
-                "source_response": df[args.data_key][index],
-            }
+                batch_results = []
+                batch_size = (
+                    num_paths_per_proc * args.num_edit_paths_per_sample
+                )  # Write results in larger batches to reduce I/O frequency,
 
-            wargs = (code_as_text, datum,)
-            pool.work_queue.put(wargs)
+                for future in as_completed(futures):
+                    try:
+                        results = future.result()
+                        if results:
+                            batch_results.extend(results)
+                            if len(batch_results) >= batch_size:
+                                writer.write_all(batch_results)
+                                pbar.update(len(batch_results))
+                                batch_results.clear()
+                    except Exception as e:
+                        print(f"Error processing future: {e}")
+                    finally:
+                        del future
 
+                # Write any remaining results after all futures are processed
+                if batch_results:
+                    writer.write_all(batch_results)
+                    pbar.update(len(batch_results))
 
 
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument(
-        "--seed", 
-        default=1, 
+        "--seed",
+        default=1,
         type=int,
         help="Random seed used during synthetic data generation.",
     )
     parser.add_argument(
         "--source",
-        default=os.path.join(PROJECT_PATH, "instruct_data/merged_oss_data_raw_pyt.jsonl"),
+        default=os.path.join(
+            PROJECT_PATH, "instruct_data/merged_oss_data_raw_pyt.jsonl"
+        ),
         type=str,
-        help="Path to source JSONLines file."
+        help="Path to source JSONLines file.",
     )
     parser.add_argument(
-        "--dest_dir", 
-        default="instruct_data/gen", 
-        type=str, 
-        help="""Destination directory for synthetically generated data."""
+        "--dest_dir",
+        default="instruct_data/gen",
+        type=str,
+        help="""Destination directory for synthetically generated data.""",
     )
     parser.add_argument(
         "-n",
         "--num_samples",
         default="all",
         help="""Number of samples to process. If passed as an integer, subsamples the dataset 
-        without replacement. Otherwise, processes all data in the source file."""
+        without replacement. Otherwise, processes all data in the source file.""",
     )
     parser.add_argument(
-        "-c", 
-        "--num_workers", 
-        default=256, 
+        "-c",
+        "--num_workers",
+        default=256,
         type=int,
-        help="Number of parallel workers to use during synthetic data generation."
+        help="Number of parallel workers to use during synthetic data generation.",
     )
     parser.add_argument(
-        "--data_key", 
+        "--data_key",
         default="response",
-        help="Name of example data field in the source dataset."
+        help="Name of example data field in the source dataset.",
     )
     parser.add_argument(
-        "--num_edit_paths_per_sample", 
-        default=5, 
+        "--num_edit_paths_per_sample",
+        default=1,
         type=int,
-        help="How many edit paths should we (independently) sample per example in the dataset?"
+        help="How many edit paths should we (independently) sample per example in the dataset?",
     )
 
     args = parser.parse_args()
 
+    args.dest_dir = os.path.join(PROJECT_PATH, args.dest_dir)
+    os.makedirs(args.dest_dir, exist_ok=True)
+    args.dest = os.path.join(
+        args.dest_dir,
+        f"{len([f for f in os.listdir(args.dest_dir)])}".zfill(4)
+        + f"_{args.num_samples}_{args.num_edit_paths_per_sample}_{args.seed}_vec.jsonl",
+    )
+    print(args.dest)
     return args
+
 
 if __name__ == "__main__":
     args = parse_args()
+    start_time = time.time()
     main(args)
+    print(f"Completed in {time.time() - start_time:.2f} seconds")
