@@ -4,7 +4,9 @@ This is the official code release accompanying the paper *[Training Language Mod
 
 ---
 
-**Tldr 💡**: LLMs are typically trained to autoregressively synthesize entire programs from scratch. This makes repeatedly editing a program with an LLM extremely expensive. We claim that this is the result of a data problem. To solve it, we introduce a synthetic data generation algorithm that can be used to refactor arbitrary code into sequences of error-free code edits. Repeatedly sampling from LMs finetuned on synthetic edit sequences yields code synthesis solutions that are competitive with GPT-4 and GPT-4-Omni, and have total inference costs that are similar to sampling once from the best open-source LLMs (e.g. Llama 3.1 405B).
+**Tldr 💡**: LLMs are typically trained to autoregressively synthesize entire programs from scratch. This makes repeatedly editing a program with an LLM extremely expensive. Current state-of-the-art, LLM-powered code editing tools like Cursor [repeatedly prompt models to rewrite entire programs during every edit generation call](https://web.archive.org/web/20240823050616/https://www.cursor.com/blog/instant-apply). We claim that this is the result of a data problem. 
+
+To solve it, we introduce a synthetic data generation algorithm (**LintSeq**) that can be used to refactor arbitrary code data into code edit sequences. Repeatedly sampling from small LMs (e.g. Phi 3 3.8B) finetuned on synthetic edit sequences yields solutions to HumanEval and MBPP problems that are **competitive with GPT-4 and GPT-4-Omni**, and have total inference costs that are similar to sampling once from the best open-source LLMs (e.g. Llama 3.1 405B).
 
 We also pretrain our own tiny edit sequence code LMs (150M and 400M parameters). **Our models are state-of-the-art in code synthesis on HumanEval and MBPP across pass@k for their size.**
 

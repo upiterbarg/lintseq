@@ -14,8 +14,6 @@ import tempfile
 from argparse import ArgumentParser
 from tqdm import tqdm
 
-from helpers import *
-
 ####
 REPO_NAME = "lintseq"
 base_path = str(pathlib.Path().resolve())
@@ -57,11 +55,12 @@ def gen_edit_paths(idx, start_i, total_samples, args, df, samples):
         for i in range(start_i, start_i + total_samples):
             index = samples[i]
             code_as_text = df[args.data_key][index]
+            code_as_text = strip_chain_of_thought(code_as_text)
 
             for j in range(args.num_edit_paths_per_sample):
-                edit_path = random_chunked_trajectory(code_as_text)
+                edit_sequence = random_chunked_trajectory(code_as_text)
+                _, diff_seq = inflate_edit_path(code_as_text, edit_sequence)
 
-                _, diff_seq = inflate_edit_path(code_as_text, edit_path)
                 datum = {
                     "edit_path": diff_seq,
                     "index": int(index),
@@ -97,8 +96,9 @@ def main(args):
     os.makedirs(args.dest_dir, exist_ok=True)
     args.dest = os.path.join(
         args.dest_dir,
-        f"randomchunked_{len([f for f in os.listdir(args.dest_dir)])}".zfill(4)
-        + f"_n{args.num_samples}_s{args.num_edit_paths_per_sample}_rs{args.seed}.jsonl",
+        f"{len([f for f in os.listdir(args.dest_dir)])}".zfill(4)
+        + f"_n{args.num_samples}_s{args.num_edit_paths_per_sample}_rs{args.seed}"
+        + "_randomchunked.jsonl",
     )
 
     data = []
@@ -145,14 +145,14 @@ def parse_args():
     )
     parser.add_argument(
         "--source",
-        default="/data/projects/editregress/instruct_data/merged_oss_data_raw_pyt.jsonl",
+        default=os.path.join(PROJECT_PATH, "instruct_data/merged_oss_data_raw_pyt.jsonl"),
         type=str,
         help="Path to source JSONLines file.",
     )
     parser.add_argument(
         "--dest_dir",
         default="instruct_data/gen",
-        ype=str,
+        type=str,
         help="""Destination directory for synthetically generated data.""",
     )
     parser.add_argument(
@@ -165,7 +165,7 @@ def parse_args():
     parser.add_argument(
         "-c",
         "--num_workers",
-        default=256,
+        default=8,
         type=int,
         help="Number of parallel workers to use during synthetic data generation.",
     )

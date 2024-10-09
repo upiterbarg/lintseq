@@ -85,7 +85,9 @@ def worker_fn(code_as_text, datum):
     if edit_path is None:
         return None
 
-    _, diff_seq = inflate_edit_path(code_as_text, edit_path)
+    edit_sequence =  edit_path[0][0]
+
+    _, diff_seq = inflate_edit_path(code_as_text, edit_sequence)
 
     datum = {
         **datum,
@@ -178,14 +180,14 @@ def parse_args():
     )
     parser.add_argument(
         "--source",
-        default="/data/projects/editregress/instruct_data/merged_oss_data_raw_pyt.jsonl",
+        default=os.path.join(PROJECT_PATH, "instruct_data/merged_oss_data_raw_pyt.jsonl"),
         type=str,
         help="Path to source JSONLines file."
     )
     parser.add_argument(
         "--dest_dir", 
         default="instruct_data/gen", 
-        ype=str, 
+        type=str, 
         help="""Destination directory for synthetically generated data."""
     )
     parser.add_argument(

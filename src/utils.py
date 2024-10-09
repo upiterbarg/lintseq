@@ -42,7 +42,7 @@ def strip_chain_of_thought(response, expected_programming_language="python"):
         return response
 
 
-def inflate_edit_path(code_as_text, edit_path):
+def inflate_edit_path(code_as_text, edit_sequence):
     """Apply the line indices of edits to the string representing the program/file.
 
     Return the corresponding code edits, expressed both as sequences of "raw" program
@@ -50,14 +50,9 @@ def inflate_edit_path(code_as_text, edit_path):
     """
     lines = code_as_text.split("\n")
 
-    top_candidate = edit_path[0]
-    edit_sequence = top_candidate[0]
-
-    total_edits = []
-    total_edit = []
-
     integrated = []
     total_edit = []
+
     for step, edit in enumerate(edit_sequence):
         total_edit += edit
         integrated += [deepcopy(total_edit)]
