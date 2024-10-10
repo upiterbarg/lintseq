@@ -10,6 +10,7 @@ from tqdm import tqdm
 from argparse import ArgumentParser
 from copy import deepcopy
 import time
+import multiprocessing
 
 ####
 REPO_NAME = "lintseq"
@@ -52,7 +53,7 @@ def gen_edit_paths(idx, start_i, total_samples, args, df, samples):
                     ignore_init_errors=False,
                 )
             except:
-                continue  # Skip errors, don't stop the whole process
+                continue
 
             if edit_path is None:
                 continue
@@ -86,56 +87,54 @@ def main(args):
 
     samples = np.array(samples)
 
-    # Batch work to reduce inter-process communication
-    # num_paths_per_proc = min(8, samples.shape[0] // num_proc)
+    # Increase number of paths per process to reduce worker overhead
     num_paths_per_proc = 8
-    num_proc = 128
+    num_proc = min(args.num_workers, multiprocessing.cpu_count())  # Use number of CPUs
 
     gen_edit_paths_helper = functools.partial(
         gen_edit_paths, args=args, df=df, samples=samples
     )
 
     gen_args = []
-    start_i = 0
     for i in range(0, samples.shape[0], num_paths_per_proc):
         gen_args.append(
             [i // num_paths_per_proc, i, min(num_paths_per_proc, samples.shape[0] - i)]
         )
 
     total_tasks = samples.shape[0] * args.num_edit_paths_per_sample
+    batch_size = 1024  # Larger batch size for writing to reduce I/O overhead
 
     # Single progress bar for the entire processing
     with tqdm(total=total_tasks, desc="Processing", ncols=100) as pbar:
         # Write the output file in larger batches
         with jsonlines.open(args.dest, mode="w") as writer:
-            with ProcessPoolExecutor(max_workers=num_proc) as executor:
-                futures = [
-                    executor.submit(gen_edit_paths_helper, *args) for args in gen_args
-                ]
+            batch_results = []
+            for batch_start in range(0, len(gen_args), batch_size):
+                batch_futures = gen_args[batch_start : batch_start + batch_size]
+                with ProcessPoolExecutor(max_workers=num_proc) as executor:
+                    futures = [
+                        executor.submit(gen_edit_paths_helper, *args)
+                        for args in batch_futures
+                    ]
 
-                batch_results = []
-                batch_size = (
-                    num_paths_per_proc * args.num_edit_paths_per_sample
-                )  # Write results in larger batches to reduce I/O frequency,
+                    for future in as_completed(futures):
+                        try:
+                            results = future.result()
+                            if results:
+                                batch_results.extend(results)
+                                pbar.update(len(results))
+                                if len(batch_results) >= batch_size:
+                                    writer.write_all(batch_results)
+                                    batch_results.clear()
+                        except Exception as e:
+                            print(f"Error processing future: {e}")
+                        finally:
+                            del future
 
-                for future in as_completed(futures):
-                    try:
-                        results = future.result()
-                        if results:
-                            batch_results.extend(results)
-                            if len(batch_results) >= batch_size:
-                                writer.write_all(batch_results)
-                                pbar.update(len(batch_results))
-                                batch_results.clear()
-                    except Exception as e:
-                        print(f"Error processing future: {e}")
-                    finally:
-                        del future
-
-                # Write any remaining results after all futures are processed
+                # Write any remaining results after processing the batch
                 if batch_results:
                     writer.write_all(batch_results)
-                    pbar.update(len(batch_results))
+                    batch_results.clear()
 
 
 def parse_args():
@@ -170,7 +169,7 @@ def parse_args():
     parser.add_argument(
         "-c",
         "--num_workers",
-        default=256,
+        default=8,
         type=int,
         help="Number of parallel workers to use during synthetic data generation.",
     )
