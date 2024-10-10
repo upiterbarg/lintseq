@@ -22,6 +22,8 @@ from utils import *
 sys.path.insert(0, os.path.join(PROJECT_PATH, "src", "data_gen"))
 from lintseq import *
 
+"""Multithreaded synthetic edit sequence generation in Python with LintSeq."""
+
 
 def gen_edit_paths(idx, start_i, total_samples, args, df, samples):
     """
