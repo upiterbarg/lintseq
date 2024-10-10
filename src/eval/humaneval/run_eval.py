@@ -84,6 +84,12 @@ def main(args):
         tokenizer_name_or_path=args.tokenizer_name_or_path,
         use_fast_tokenizer=not args.use_slow_tokenizer,
     )
+
+    if args.use_stop_sequences:
+        stop_sequences = ["\nclass", "\ndef", "\n#", "\nif", "\nprint", EOS_TOKEN]
+    else:
+        stop_sequences = [EOS_TOKEN]
+
     if args.use_vllm:
         if "llama" in args.model_name_or_path:
             model = vllm.LLM(
@@ -109,8 +115,8 @@ def main(args):
             temperature=args.temperature,
             top_p=args.top_p,
             max_tokens=512,
-            stop=[EOS_TOKEN],
             min_tokens=8,
+            stop=stop_sequences,
         )
 
         generations = model.generate(prompts, sampling_params)
@@ -126,7 +132,13 @@ def main(args):
             device_map="balanced_low_0" if torch.cuda.device_count() > 1 else "auto",
         )
 
-        stop_sequences = None
+        if not stop_sequences is None:
+            # Because many tokenizers will treat the word after space differently from the original word alone,
+            # to be consistent, we add a space before tokenization and remove it after tokenization.
+            stop_sequences = [
+                tokenizer.encode(" " + x, add_special_tokens=False)[1:]
+                for x in stop_sequences
+            ]
         outputs_per_sampling_iter = []
         for sampling_iter in range(args.unbiased_sampling_size_n):
             print(f"Sampling iter: {sampling_iter} / {args.unbiased_sampling_size_n}")
@@ -262,6 +274,11 @@ if __name__ == "__main__":
         "--use_vllm",
         action="store_true",
         help="If given, we will use the vllm library, which will likely increase the inference throughput.",
+    )
+    parser.add_argument(
+        "--use_stop_sequences",
+        type=int,
+        default=0,
     )
 
     args = parser.parse_args()

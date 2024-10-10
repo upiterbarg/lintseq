@@ -94,6 +94,12 @@ def main(args):
         else args.model_name_or_path,
         use_fast_tokenizer=not args.use_slow_tokenizer,
     )
+
+    if args.use_stop_sequences:
+        stop_sequences = ["\nclass", "\ndef", "\n#", "\nif", "\nprint"]
+    else:
+        stop_sequences = None
+
     if args.use_vllm:
         if "llama" in args.model_name_or_path:
             model = vllm.LLM(
@@ -114,7 +120,6 @@ def main(args):
                 tokenizer_mode="slow" if args.use_slow_tokenizer else "auto",
                 tensor_parallel_size=torch.cuda.device_count(),
             )
-        stop_sequences = None
         sampling_params = vllm.SamplingParams(
             n=args.unbiased_sampling_size_n,
             temperature=args.temperature,
@@ -153,6 +158,14 @@ def main(args):
             do_sample = args.temperature != 0
             import pdb
 
+            if not stop_sequences is None:
+                # Because many tokenizers will treat the word after space differently from the original word alone,
+                # to be consistent, we add a space before tokenization and remove it after tokenization.
+                stop_sequences = [
+                    tokenizer.encode(" " + x, add_special_tokens=False)[1:]
+                    for x in stop_sequences
+                ]
+
             sampling_outputs = generate_completions(
                 model=model,
                 tokenizer=tokenizer,
@@ -161,6 +174,7 @@ def main(args):
                 batch_size=args.eval_batch_size,
                 num_return_sequences=1,  # we don't use the hf num_return_sequences, because otherwise the real batch size will be multiplied by it and often cause oom.
                 do_sample=do_sample,  # if only pass@1 is evaluated, we do greedy decoding.
+                stop_id_sequences=stop_sequences,
                 temperature=args.temperature,
                 pad_token_id=tokenizer.eos_token_id,
             )
@@ -263,9 +277,14 @@ if __name__ == "__main__":
         default=0,
     )
     parser.add_argument(
-        "--prompt_version",
+        "--use_stop_sequences",
         type=int,
         default=0,
+    )
+    parser.add_argument(
+        "--prompt_version",
+        type=int,
+        default=1,
     )
     args = parser.parse_args()
     main(args)
