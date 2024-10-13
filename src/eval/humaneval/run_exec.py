@@ -51,7 +51,7 @@ def main(args):
             n_workers=64,
             diff=args.diff,
             malformed_penalty=args.malformed_penalty,
-            timeout=3,
+            timeout=10,
         )
 
         print(pass_at_k_results)
