@@ -34,7 +34,7 @@ We also pretrain our own tiny edit sequence code LMs (150M and 400M parameters).
 	> configs/                                  # Configuration files
 		> ds_configs/                               # DeepSpeed configs
 	> eval/                                     # Evaluation code
-	> scripts/                                # Launch scripts in bash
+	> scripts/                                  # Launch scripts in bash
 		> eval_scripts/                             # Eval scripts for reproducing TinyCodeLM evals locally
 		> finetuning_scripts/                       # Example launch scripts for model finetuning experiments
 ```
