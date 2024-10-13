@@ -7,7 +7,7 @@ This is the official code release accompanying the paper *[Training Language Mod
 ## Links
 
 - Project page: [https://lintseq.github.io/](https://lintseq.github.io/)
-- TinyCodeLM models [are available on HuggingFace](https://huggingface.co/collections/upiter/tinycodelm-6709636f4aba6241d547334f)
+- [TinyCodeLM models are available on HuggingFace](https://huggingface.co/collections/upiter/tinycodelm-6709636f4aba6241d547334f)
 
 
 ---
