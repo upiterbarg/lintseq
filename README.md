@@ -2,6 +2,13 @@
 
 This is the official code release accompanying the paper *[Training Language Models on Synthetic Edit Sequences Improves Code Synthesis](https://arxiv.org/abs/2410.02749)* (arXiv preprint, 2024).
 
+---
+
+## Links
+
+- Project page: [https://lintseq.github.io/](https://lintseq.github.io/)
+- TinyCodeLM models [are available on HuggingFace](https://huggingface.co/collections/upiter/tinycodelm-6709636f4aba6241d547334f)
+
 
 ---
 
@@ -10,13 +17,6 @@ This is the official code release accompanying the paper *[Training Language Mod
 To solve it, we introduce a synthetic data generation algorithm (**LintSeq**) that can be used to refactor arbitrary code data into code edit sequences. Repeatedly sampling from small LMs (e.g. Phi 3 3.8B) finetuned on synthetic edit sequences yields solutions to HumanEval and MBPP problems that are **competitive with GPT-4 and GPT-4-Omni**, and have total inference costs that are similar to sampling once from the best open-source LLMs (e.g. Llama 3.1 405B).
 
 We also pretrain our own tiny edit sequence code LMs (150M and 400M parameters). **Our models are state-of-the-art in code synthesis on HumanEval and MBPP across pass@k for their size.**
-
----
-
-## Links
-
-- Project page: [https://lintseq.github.io/](https://lintseq.github.io/)
-- TinyCodeLM models [are now available on HuggingFace](https://huggingface.co/collections/upiter/tinycodelm-6709636f4aba6241d547334f)
 
 ---
 
@@ -33,13 +33,11 @@ We also pretrain our own tiny edit sequence code LMs (150M and 400M parameters).
 	> finetune.py                               # Instruction finetune language models with DeepSpeed
 	> configs/                                  # Configuration files
 		> ds_configs/                               # DeepSpeed configs
-	> finetuning_scripts/                       # Example launch scripts for replicating external model finetuning experiments
-		> gemma2_2b/                                # Gemma 2, 2B
-		> llama3v1_8b/                              # Llama 3.1, 8B
-		> phi3_14b/                                 # Phi 3, Medium (14B)
-		> phi3_3b/                                  # Phi 3, Mini (3B)
+	> eval/                                     # Evaluation code
+	> scripts/                                # Launch scripts in bash
+		> eval_scripts/                             # Eval scripts for reproducing TinyCodeLM evals locally
+		> finetuning_scripts/                       # Example launch scripts for model finetuning experiments
 ```
-
 ---
 
 ## Coming soon... ⚙️
