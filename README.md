@@ -1,6 +1,6 @@
 # Training Language Models on Synthetic Edit Sequences Improves Code Synthesis 
 
-This is the official code release accompanying the paper *[Training Language Models on Synthetic Edit Sequences Improves Code Synthesis](https://arxiv.org/abs/2410.02749)* (arXiv preprint, 2024).
+This is the official code release accompanying the paper *[Training Language Models on Synthetic Edit Sequences Improves Code Synthesis](https://arxiv.org/abs/2410.02749)* (ICLR 2025).
 
 ---
 
@@ -14,9 +14,11 @@ This is the official code release accompanying the paper *[Training Language Mod
 
 **Tldr**: LLMs are typically trained to autoregressively synthesize entire programs from scratch. This makes repeatedly editing a program with an LLM extremely expensive. Current state-of-the-art, LLM-powered code editing tools like Cursor [repeatedly prompt models to rewrite entire programs during every edit generation call](https://web.archive.org/web/20240823050616/https://www.cursor.com/blog/instant-apply). We claim that this is the result of a data problem. 
 
-To solve it, we introduce a synthetic data generation algorithm (**LintSeq**) that can be used to refactor arbitrary code data into code edit sequences. Repeatedly sampling from small LMs (e.g. Phi 3 3.8B) finetuned on synthetic edit sequences yields solutions to HumanEval and MBPP problems that are **competitive with GPT-4 and GPT-4-Omni**, and have total inference costs that are similar to sampling once from the best open-source LLMs (e.g. Llama 3.1 405B).
+To solve it, we introduce a synthetic data generation algorithm (**LintSeq**). This algorithm refactors programs into sequences of synthetic edits by using a linter to procedurally sample across interdependent lines of source code. Synthetic edits sampled with LintSeq reflect the syntax and semantics of their programming language. 
 
-We also pretrain our own tiny edit sequence code LMs (150M and 400M parameters). **Our models are state-of-the-art in code synthesis on HumanEval and MBPP across pass@k for their size.**
+To test the algorithm, we use it to refactor a dataset of instruction + program pairs into instruction + program-diff-sequence tuples. Then, we fine-tune a series of smaller LMs ranging from 2.6B to 14B parameters on both the re-factored and original versions of this dataset. We perform comprehensive evaluations comparing edit sequence code LMs against baselines on HumanEval, MBPP(+), CodeContests, DS-1000, and BigCodeBench. We show that models fine-tuned to iteratively synthesize code match or outperform baselines on pass@1, and exhibit better scaling across higher pass@k as a function of total test-time FLOPs. 
+
+Finally, we also pretrain our own tiny LMs for code understanding. We show that fine-tuning these models to synthesize code edit-by-edit results in strong performance on HumanEval and MBPP(+) compared to existing code language models of similar scale such as CodeT5+, AlphaCode, and Codex.
 
 ---
 
